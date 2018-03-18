@@ -20,12 +20,12 @@ def plot_digit(digit_row):
 
 
 def step(x):
-    '''Unit step function.'''
+    """Unit step function."""
     return 1 if x >= 0 else 0
 
 
 def predict(x):
-    '''Predict the label for a given x.'''
+    """Predict the label for a given x."""
     pred = np.array([])
 
     for k in range(K):
@@ -34,6 +34,24 @@ def predict(x):
         pred = np.append(pred, step(x.dot(w) - b))
 
     return pred
+
+
+def validate(X, Y):
+    """Tests the model on the given inputs and return a tuple of the error
+    rate and accuracy.
+    """
+    error_rate = 0
+
+    for x, y in zip(X, Y):
+        yhat = predict(x)
+
+        e = np.sum(np.abs(y - yhat))
+        error_rate += 0 if e == 0 else 1
+
+    # Report test accuracy.
+    error_rate /= len(X)
+
+    return error_rate, 1 - error_rate
 
 
 # Load the digits dataset
@@ -48,26 +66,36 @@ enc.fit(labels)
 labels = enc.transform(labels).toarray()
 
 # Split training and testing data
-X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(data, labels,
+                                                    test_size=0.2,
+                                                    random_state=343)
 
-x_dim = data.shape[1]
-K = labels.shape[1]
-# Initialise weights for the k-neuron network, where k in this case is 10.
+x_dim = data.shape[1]  # Number of parameters we are training on.
+K = labels.shape[1]  # Number of classes we are trying to predict.
+# Initialise weights and biases.
 W = np.random.normal(0, 1, (K, x_dim))
-# Initialise bias values for the k-neuron network.
 B = np.zeros(K)
 # Initialise training parameters
-epochs = 10
-alpha = 0.2
-num_tests = len(X_train)  # the number of rows in X_train
+epochs = 50
+alpha = 0.4  # Learning rate.
+N = len(X_train)  # Number of training examples.
+use_batch_training = False
+
+history = {'err': [], 'acc': [], 'val_err': [], 'val_acc': []}
 
 # Start training.
 for epoch in range(epochs):
-    accuracies = np.array([])
-    error_rate = 0
+    error_rate = 0  # Epoch error rate over the training set.
+    dW = np.zeros((K, x_dim))
+    dB = np.zeros(K)
 
-    # Loop through test data.
+    # Loop through training data.
     for x, y in zip(X_train, y_train):
+        # Use current model to predict the label for the current x.
+        yhat = predict(x)
+        e = np.sum(np.abs(y - yhat))
+        error_rate += 0 if e == 0 else 1
+
         # For each label class in K...
         for k in range(K):
             # Get weights and biases for label class k.
@@ -80,40 +108,48 @@ for epoch in range(epochs):
             # Calculate weight and bias changes.
             dw = e * x
             db = -e
-            # Apply weight and bias changes.
-            W[k] = w + alpha * dw
-            B[k] = b + alpha * db
 
-        # Predict the label for the current x.
-        yhat = predict(x)
-        # Calculate the error.
-        e = np.sum(np.abs(y - yhat))
+            if use_batch_training:
+                # Accumulate weight and bias changes.
+                dW[k] += dw / N
+                dB[k] += db / N
+            else:
+                # Apply weight and bias changes.
+                W[k] = W[k] + alpha * dw
+                B[k] = B[k] + alpha * db
 
-        if e != 0:
-            error_rate += 1
+    if use_batch_training:
+        # Apply average weight and bias changes
+        for k in range(K):
+            W[k] = W[k] + alpha * dW[k]
+            B[k] = B[k] + alpha * dB[k]
 
-    # Report epoch accuracy.
-    error_rate = error_rate / num_tests
+    # Update error and accuracy metrics.
+    error_rate /= N
     accuracy = 1 - error_rate
-    print('Epoch #' + str(1 + epoch) + ' accuracy: ' + str(accuracy))
+    history['err'].append(error_rate)
+    history['acc'].append(accuracy)
 
-    if accuracy > 0.99:
-        break
+    # Validate using test data and report epoch accuracy.
+    val_err, val_acc = validate(X_test, y_test)
+    history['val_err'].append(val_err)
+    history['val_acc'].append(val_acc)
+    print('Epoch # {} acc: {:.3} val_acc: {:.3}'.format(1 + epoch, accuracy, val_acc))
 
-# Make predictions on test data.
-error_rate = 0
+print('Best test accuracy: {:.3}'.format(np.max(history['val_acc'])))
 
-for i in range(len(X_test)):
-    x = X_test[i]
-    y = y_test[i]
-    yhat = predict(x)
+# Plot history of accuracy
+plt.plot(history['acc'])
+plt.plot(history['val_acc'])
+plt.legend(['Train', 'Test'])
+plt.xlabel('Epoch')
+plt.ylabel('accuracy (%)')
+plt.show()
 
-    e = np.sum(np.abs(y - yhat))
-
-    if e != 0:
-        error_rate += 1
-
-# Report test accuracy.
-error_rate /= num_tests
-accuracy = 1 - error_rate
-print('Test accuracy: ' + str(accuracy))
+# Plot history of error
+plt.plot(history['err'])
+plt.plot(history['val_err'])
+plt.legend(['Train', 'Test'])
+plt.xlabel('Epoch')
+plt.ylabel('error (%)')
+plt.show()
